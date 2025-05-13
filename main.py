@@ -145,3 +145,60 @@ async def chat(query: str = Body(..., embed=True)):
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "index_ready": index is not None}
+
+
+@app.get("/documents")
+async def get_documents():
+    """Retrieve the list of indexed files."""
+    try:
+        if not os.path.exists("./data"):
+            return {"documents": []}
+        documents = os.listdir("./data")
+        return {"documents": documents}
+    except Exception as e:
+        print(f"Error retrieving documents: {e}")
+        raise HTTPException(
+            status_code=500, detail="Failed to retrieve documents"
+        )
+
+
+@app.delete("/documents/{filename}")
+async def delete_document(filename: str):
+    """Delete a file and update the vector index."""
+    global index
+    file_path = os.path.join("./data", filename)
+
+    try:
+        # Delete the file from the data directory
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        else:
+            raise HTTPException(status_code=404, detail="File not found")
+
+        # Rebuild the index after deletion
+        if os.listdir("./data"):  # Check if there are remaining files
+            documents = SimpleDirectoryReader("./data").load_data()
+            collection = chroma_client.get_or_create_collection(
+                name="documents_collection",
+                metadata={"hnsw:space": "cosine"}
+            )
+            vector_store = ChromaVectorStore(chroma_collection=collection)
+            storage_context = StorageContext.from_defaults(
+                vector_store=vector_store
+            )
+            index = VectorStoreIndex.from_documents(
+                documents,
+                storage_context=storage_context,
+                show_progress=False
+            )
+        else:
+            # Clear the vector store if no documents remain
+            clear_chroma_data()
+            index = None
+
+        return {"status": f"Document '{filename}' deleted successfully"}
+    except Exception as e:
+        print(f"Error deleting document: {e}")
+        raise HTTPException(
+            status_code=500, detail="Failed to delete the document"
+        )
