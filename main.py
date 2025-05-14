@@ -8,6 +8,8 @@ import chromadb
 import os
 from dotenv import load_dotenv
 from llama_index.llms.openai import OpenAI
+from typing import List, Dict
+from llama_index.core.memory import ChatMemoryBuffer  # Updated import path
 
 Settings.llm = OpenAI(
     model="gpt-3.5-turbo",
@@ -23,6 +25,7 @@ chroma_client = chromadb.PersistentClient(path=chroma_dir)
 
 # Global variable for the index
 index = None
+chat_memory = ChatMemoryBuffer.from_defaults(token_limit=2000)
 
 
 @asynccontextmanager
@@ -116,29 +119,47 @@ async def upload_file(file: UploadFile = File(...)):
 
 @app.post("/chat")
 async def chat(query: str = Body(..., embed=True)):
-    global index
+    global index, chat_memory
     if index is None:
         raise HTTPException(
             status_code=400,
             detail="Index is not initialized. Please upload a file first."
         )
     try:
-        query_engine = index.as_query_engine(
-            similarity_top_k=3,
-            response_mode="tree_summarize",
-            system_prompt=(
-                "Responde en español. Usa un tono profesional, técnico y simple. "
-                "Asegúrate de transmitir los conceptos claramente y evita alucinar. "
-                "Si no tienes suficiente información, indica que no puedes responder con certeza."
-            )
-        )
-        response = query_engine.query(query)
-        return {"response": str(response)}
+        chat_engine = get_chat_engine(index)
+        response = chat_engine.chat(query)
+
+        # Access chat messages directly from the memory buffer
+        messages = chat_memory.get() if chat_memory else []
+
+        return {
+            "response": str(response),
+            "context": [
+                {"role": "user" if msg.role == "human" else "assistant",
+                 "content": msg.content}
+                for msg in messages[-2:]
+            ] if messages else []
+        }
     except Exception as e:
-        print(f"Error during query execution: {e}")
+        print(f"Error during chat execution: {e}")
         raise HTTPException(
             status_code=500,
-            detail="Failed to process the query"
+            detail="Failed to process the chat message"
+        )
+
+
+@app.post("/chat/clear")
+async def clear_chat_history():
+    """Clear the chat history."""
+    global chat_memory
+    try:
+        chat_memory.clear()
+        return {"status": "Chat history cleared successfully"}
+    except Exception as e:
+        print(f"Error clearing chat history: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to clear chat history"
         )
 
 
@@ -165,7 +186,7 @@ async def get_documents():
 @app.delete("/documents/{filename}")
 async def delete_document(filename: str):
     """Delete a file and update the vector index."""
-    global index
+    global index, chat_memory
     file_path = os.path.join("./data", filename)
 
     try:
@@ -175,10 +196,17 @@ async def delete_document(filename: str):
         else:
             raise HTTPException(status_code=404, detail="File not found")
 
-        # Rebuild the index after deletion
-        if os.listdir("./data"):  # Check if there are remaining files
+        # Clear the existing collection to remove old vectors
+        try:
+            chroma_client.delete_collection("documents_collection")
+        except Exception as e:
+            print(f"Warning: Could not delete collection: {e}")
+
+        # Rebuild the index after deletion if there are remaining files
+        if os.listdir("./data"):
             documents = SimpleDirectoryReader("./data").load_data()
-            collection = chroma_client.get_or_create_collection(
+            # Create a new collection
+            collection = chroma_client.create_collection(
                 name="documents_collection",
                 metadata={"hnsw:space": "cosine"}
             )
@@ -196,9 +224,27 @@ async def delete_document(filename: str):
             clear_chroma_data()
             index = None
 
+        # Clear chat history when document is deleted
+        chat_memory.clear()
+
         return {"status": f"Document '{filename}' deleted successfully"}
+
     except Exception as e:
         print(f"Error deleting document: {e}")
         raise HTTPException(
             status_code=500, detail="Failed to delete the document"
         )
+
+
+def get_chat_engine(index: VectorStoreIndex):
+    """Create a chat engine with memory."""
+    return index.as_chat_engine(
+        chat_memory=chat_memory,
+        similarity_top_k=3,
+        system_prompt=(
+            "Responde en español. Usa un tono profesional, técnico y simple. "
+            "Asegúrate de transmitir los conceptos claramente y evita alucinar. "
+            "Si no tienes suficiente información, indica que no puedes responder con certeza. "
+            "Utiliza el contexto de la conversación anterior cuando sea relevante."
+        )
+    )
