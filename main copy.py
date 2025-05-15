@@ -8,8 +8,9 @@ import chromadb
 import os
 from dotenv import load_dotenv
 from llama_index.llms.openai import OpenAI
-from typing import List, Dict, Optional
+from typing import List, Dict
 from llama_index.core.memory import ChatMemoryBuffer  # Updated import path
+from typing import Dict, List, Optional
 from pydantic import BaseModel
 
 Settings.llm = OpenAI(
@@ -28,6 +29,51 @@ chroma_client = chromadb.PersistentClient(path=chroma_dir)
 index = None
 chat_memory = ChatMemoryBuffer.from_defaults(token_limit=2000)
 
+# Data Models
+
+
+class Bot(BaseModel):
+    id: str
+    name: str
+    description: str
+    system_prompt: str
+    collection_name: str
+    data_dir: str
+
+
+class BotConfig:
+    def __init__(self):
+        self.bots: Dict[str, Bot] = {
+            "bot1": Bot(
+                id="bot1",
+                name="Asistente General",
+                description="Asistente general para consultas de documentos",
+                system_prompt="Responde siempre en español de manera formal y técnica.",
+                collection_name="documents_collection_bot1",
+                data_dir="./data_bot1"
+            ),
+            "bot2": Bot(
+                id="bot2",
+                name="Asistente Técnico",
+                description="Especialista en documentación técnica",
+                system_prompt="Responde en español, enfocándote en detalles técnicos y específicos.",
+                collection_name="documents_collection_bot2",
+                data_dir="./data_bot2"
+            ),
+            # Add more bots as needed
+        }
+        self.indices: Dict[str, VectorStoreIndex] = {}
+        self.chat_memories: Dict[str, ChatMemoryBuffer] = {}
+
+        # Initialize directories and collections
+        for bot in self.bots.values():
+            os.makedirs(bot.data_dir, exist_ok=True)
+            self.chat_memories[bot.id] = ChatMemoryBuffer.from_defaults(
+                token_limit=2000)
+
+
+bot_config = BotConfig()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -36,29 +82,35 @@ async def lifespan(app: FastAPI):
         initialize_index(bot_id)
     yield
 
+# Modified initialization function
 
-def initialize_index():
-    global index
-    if os.path.exists("./data") and os.listdir("./data"):
+
+def initialize_index(bot_id: str):
+    """Initialize index for a specific bot."""
+    bot = bot_config.bots[bot_id]
+    if os.path.exists(bot.data_dir) and os.listdir(bot.data_dir):
         try:
-            print("Initializing index from existing data...")
-            documents = SimpleDirectoryReader("./data").load_data()
+            documents = SimpleDirectoryReader(bot.data_dir).load_data()
             collection = chroma_client.get_or_create_collection(
-                name="documents_collection",
+                name=bot.collection_name,
                 metadata={"hnsw:space": "cosine"}
             )
             vector_store = ChromaVectorStore(chroma_collection=collection)
             storage_context = StorageContext.from_defaults(
                 vector_store=vector_store)
-            index = VectorStoreIndex.from_documents(
+
+            bot_config.indices[bot_id] = VectorStoreIndex.from_documents(
                 documents,
                 storage_context=storage_context,
                 show_progress=False
             )
-            print("Index initialized successfully")
+            print(f"Index initialized successfully for bot {bot_id}")
         except Exception as e:
-            print(f"Error initializing index: {e}")
-            index = None
+            print(f"Error initializing index for bot {bot_id}: {e}")
+            bot_config.indices[bot_id] = None
+    else:
+        print(f"No documents found for bot {bot_id}")
+        bot_config.indices[bot_id] = None
 
 
 app = FastAPI(lifespan=lifespan)
@@ -252,83 +304,9 @@ def get_chat_engine(index: VectorStoreIndex):
         )
     )
 
-# -----a partir de aca es nuevo
-# Data Models
-
-
-class Bot(BaseModel):
-    id: str
-    name: str
-    description: str
-    system_prompt: str
-    collection_name: str
-    data_dir: str
-
-
-class BotConfig:
-    def __init__(self):
-        self.bots: Dict[str, Bot] = {
-            "bot1": Bot(
-                id="bot1",
-                name="Asistente General",
-                description="Asistente general para consultas de documentos",
-                system_prompt="Responde siempre en español de manera formal y técnica.",
-                collection_name="documents_collection_bot1",
-                data_dir="./data_bot1"
-            ),
-            "bot2": Bot(
-                id="bot2",
-                name="Asistente Técnico",
-                description="Especialista en documentación técnica",
-                system_prompt="Responde en español, enfocándote en detalles técnicos y específicos.",
-                collection_name="documents_collection_bot2",
-                data_dir="./data_bot2"
-            ),
-            # Add more bots as needed
-        }
-        self.indices: Dict[str, VectorStoreIndex] = {}
-        self.chat_memories: Dict[str, ChatMemoryBuffer] = {}
-
-        # Initialize directories and collections
-        for bot in self.bots.values():
-            os.makedirs(bot.data_dir, exist_ok=True)
-            self.chat_memories[bot.id] = ChatMemoryBuffer.from_defaults(
-                token_limit=2000)
-
-
-bot_config = BotConfig()
-
-
-# Modified initialization function
-def initialize_index(bot_id: str):
-    """Initialize index for a specific bot."""
-    bot = bot_config.bots[bot_id]
-    if os.path.exists(bot.data_dir) and os.listdir(bot.data_dir):
-        try:
-            documents = SimpleDirectoryReader(bot.data_dir).load_data()
-            collection = chroma_client.get_or_create_collection(
-                name=bot.collection_name,
-                metadata={"hnsw:space": "cosine"}
-            )
-            vector_store = ChromaVectorStore(chroma_collection=collection)
-            storage_context = StorageContext.from_defaults(
-                vector_store=vector_store)
-
-            bot_config.indices[bot_id] = VectorStoreIndex.from_documents(
-                documents,
-                storage_context=storage_context,
-                show_progress=False
-            )
-            print(f"Index initialized successfully for bot {bot_id}")
-        except Exception as e:
-            print(f"Error initializing index for bot {bot_id}: {e}")
-            bot_config.indices[bot_id] = None
-    else:
-        print(f"No documents found for bot {bot_id}")
-        bot_config.indices[bot_id] = None
-
-
 # Modified endpoints
+
+
 @app.get("/bots")
 async def get_bots():
     """Get list of available bots."""
@@ -348,9 +326,8 @@ async def upload_file(bot_id: str, file: UploadFile = File(...)):
     if bot_id not in bot_config.bots:
         raise HTTPException(status_code=404, detail="Bot not found")
 
-    bot = bot_config.bots[bot_id]
-
     # Save the uploaded file
+    bot = bot_config.bots[bot_id]
     os.makedirs(bot.data_dir, exist_ok=True)
     file_path = f"{bot.data_dir}/{file.filename}"
     with open(file_path, "wb") as f:
@@ -376,11 +353,11 @@ async def upload_file(bot_id: str, file: UploadFile = File(...)):
             show_progress=False
         )
 
-        return {"status": "File uploaded and added to the index successfully"}
+        return {"status": f"File uploaded and added to the index for bot {bot_id} successfully"}
     except Exception as e:
         print(f"Error updating index for bot {bot_id}: {e}")
         raise HTTPException(
-            status_code=500, detail="Failed to update the index"
+            status_code=500, detail="Failed to update the index for bot {bot_id}"
         )
 
 
@@ -389,25 +366,23 @@ async def chat(bot_id: str, query: str = Body(..., embed=True)):
     if bot_id not in bot_config.bots:
         raise HTTPException(status_code=404, detail="Bot not found")
 
-    bot = bot_config.bots[bot_id]
-    index = bot_config.indices.get(bot_id)
-    chat_memory = bot_config.chat_memories.get(bot_id)
-
-    if index is None:
+    bot_index = bot_config.indices.get(bot_id)
+    bot_memory = bot_config.chat_memories.get(bot_id)
+    if bot_index is None:
         raise HTTPException(
             status_code=400,
             detail="Index is not initialized. Please upload a file first."
         )
     try:
-        chat_engine = index.as_chat_engine(
-            chat_memory=chat_memory,
+        chat_engine = bot_index.as_chat_engine(
+            chat_memory=bot_memory,
             similarity_top_k=3,
-            system_prompt=bot.system_prompt
+            system_prompt=bot_config.bots[bot_id].system_prompt
         )
         response = chat_engine.chat(query)
 
         # Access chat messages directly from the memory buffer
-        messages = chat_memory.get() if chat_memory else []
+        messages = bot_memory.get() if bot_memory else []
 
         return {
             "response": str(response),
@@ -421,7 +396,7 @@ async def chat(bot_id: str, query: str = Body(..., embed=True)):
         print(f"Error during chat execution for bot {bot_id}: {e}")
         raise HTTPException(
             status_code=500,
-            detail="Failed to process the chat message"
+            detail="Failed to process the chat message for bot {bot_id}"
         )
 
 
@@ -431,7 +406,6 @@ async def get_documents(bot_id: str):
         raise HTTPException(status_code=404, detail="Bot not found")
 
     bot = bot_config.bots[bot_id]
-
     try:
         if not os.path.exists(bot.data_dir):
             return {"documents": []}
@@ -440,5 +414,5 @@ async def get_documents(bot_id: str):
     except Exception as e:
         print(f"Error retrieving documents for bot {bot_id}: {e}")
         raise HTTPException(
-            status_code=500, detail="Failed to retrieve documents"
+            status_code=500, detail="Failed to retrieve documents for bot {bot_id}"
         )

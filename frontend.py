@@ -2,23 +2,34 @@ import streamlit as st
 import requests
 from datetime import datetime
 
+# Initialize bot selection and chat histories in session state
+if "active_bot" not in st.session_state:
+    st.session_state.active_bot = None
 
-# Initialize chat history in session state if it doesn't exist
-if "messages" not in st.session_state:
-    st.session_state.messages = [{
-        "role": "assistant",
-        "content": "¡Hola! Soy un bot diseñado para responder consultas basadas en la información de tu biblioteca. ¿Cómo puedo ayudarte?",
-        "timestamp": datetime.now().strftime("%H:%M")
-    }]
+if "bot_messages" not in st.session_state:
+    st.session_state.bot_messages = {}
 
-st.title("Chatbot MVP")
-
-# Function to fetch the list of documents
+# Function to fetch available bots
 
 
-def fetch_documents():
+def fetch_bots():
     try:
-        response = requests.get("http://localhost:8000/documents")
+        response = requests.get("http://localhost:8000/bots")
+        if response.status_code == 200:
+            return response.json().get("bots", [])
+        else:
+            st.error("Error al obtener la lista de bots.")
+            return []
+    except Exception as e:
+        st.error(f"Error: {e}")
+        return []
+
+# Function to fetch documents for specific bot
+
+
+def fetch_documents(bot_id):
+    try:
+        response = requests.get(f"http://localhost:8000/documents/{bot_id}")
         if response.status_code == 200:
             return response.json().get("documents", [])
         else:
@@ -29,78 +40,86 @@ def fetch_documents():
         return []
 
 
-# Sidebar: List of documents and file upload
-st.sidebar.title("Tu Biblioteca")
+# Main title
+st.title("Multi-Bot Chat System")
 
-# Add a horizontal line for separation
-st.sidebar.markdown("---")
+# Sidebar
+with st.sidebar:
+    st.title("Configuración")
 
-# Fetch and display the list of documents
-documents = fetch_documents()
+    # Bot selection
+    bots = fetch_bots()
+    bot_options = {bot["name"]: bot["id"] for bot in bots}
 
-if documents:
-    for doc in documents:
-        col1, col2, col3 = st.sidebar.columns([1, 7, 3])
-        col1.markdown("📄")  # File icon
-        col2.write(doc)
-        # Delete button with an icon
-        if col3.button("Delete", key=f"delete_{doc}"):
-            # Delete the document
-            try:
-                response = requests.delete(
-                    f"http://localhost:8000/documents/{doc}")
+    selected_bot_name = st.selectbox(
+        "Selecciona un asistente",
+        options=list(bot_options.keys()),
+        key="bot_selector"
+    )
+
+    selected_bot_id = bot_options[selected_bot_name]
+
+    # Update active bot if changed
+    if st.session_state.active_bot != selected_bot_id:
+        st.session_state.active_bot = selected_bot_id
+        if selected_bot_id not in st.session_state.bot_messages:
+            st.session_state.bot_messages[selected_bot_id] = [{
+                "role": "assistant",
+                "content": next((bot["description"] for bot in bots if bot["id"] == selected_bot_id), ""),
+                "timestamp": datetime.now().strftime("%H:%M")
+            }]
+
+    # Document management section
+    st.markdown("---")
+    st.subheader("Documentos")
+
+    # File uploader
+    uploaded_file = st.file_uploader(
+        "Subir documento",
+        type=["pdf", "docx", "txt"],
+        key=f"uploader_{selected_bot_id}"
+    )
+
+    if uploaded_file:
+        try:
+            with st.spinner("Procesando archivo..."):
+                files = {"file": (uploaded_file.name,
+
+                                  uploaded_file.getvalue())}
+                response = requests.post(
+                    f"http://localhost:8000/upload/{selected_bot_id}",
+                    files=files
+                )
                 if response.status_code == 200:
                     st.sidebar.success(
                         f"Documento '{doc}' eliminado correctamente.")
-                    # Trigger a page reload
+# Trigger a page reload
                     st.rerun()
-                else:
-                    st.sidebar.error(
-                        f"Error al eliminar el documento: {response.status_code}")
-            except Exception as e:
-                st.sidebar.error(f"Error: {e}")
-else:
-    st.sidebar.write("No hay documentos disponibles.")
+        except Exception as e:
+            st.error(f"Error al subir el archivo: {e}")
 
-
-# Initialize file upload state if it doesn't exist
-if "file_uploader_key" not in st.session_state:
-    st.session_state.file_uploader_key = 0
-
-# File upload in the sidebar
-uploaded_file = st.sidebar.file_uploader(
-    label=".",  # Remove the "Sube un documento..." text
-    type=["pdf", "docx", "txt"],
-    label_visibility="collapsed",
-    key=f"uploader_{st.session_state.file_uploader_key}"  # Dynamic key
-)
-
-if uploaded_file is not None:
-    try:
-        st.sidebar.info("Procesando archivo...")
-        files = {"file": (uploaded_file.name, uploaded_file.getvalue())}
-        response = requests.post("http://localhost:8000/upload", files=files)
-
-        if response.status_code == 200:
-            response_data = response.json()
-            st.sidebar.success(response_data.get(
-                "status", "Documento subido correctamente."))
-            # Increment the file uploader key to force a reset
-            st.session_state.file_uploader_key += 1
-            # Rerun the app with the new key
-            st.rerun()
-        else:
-            st.sidebar.error(f"Error en la solicitud: {response.status_code}")
-            # Reset the file uploader on error
-            st.session_state.file_uploader_key += 1
-            st.rerun()
-    except Exception as e:
-        st.sidebar.error(f"Error al subir el archivo: {e}")
-        # Reset the file uploader on error
-        st.session_state.file_uploader_key += 1
-        st.rerun()
+    # Document list
+    documents = fetch_documents(selected_bot_id)
+    if documents:
+        for doc in documents:
+            col1, col2 = st.columns([3, 1])
+            col1.write(doc)
+            if col2.button("Eliminar", key=f"delete_{doc}_{selected_bot_id}"):
+                try:
+                    response = requests.delete(
+                        f"http://localhost:8000/documents/{selected_bot_id}/{doc}"
+                    )
+                    if response.status_code == 200:
+                        st.success(
+                            f"Documento '{doc}' eliminado correctamente")
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Error al eliminar el documento: {e}")
+    else:
+        st.write("No hay documentos disponibles")
 
 # Chat interface
+
 
 # Replace all existing style sections with this single, consolidated one
 st.markdown("""
@@ -206,7 +225,7 @@ chat_container = st.container()
 
 # Mostrar los mensajes del chat dentro del contenedor
 with chat_container:
-    for message in st.session_state.messages:
+    for message in st.session_state.bot_messages.get(selected_bot_id, []):
         if message["role"] == "user":
             st.markdown(f"""
                 <div class="user-message">
@@ -277,7 +296,7 @@ st.markdown("""
         padding: 0 1.5rem !important;
         line-height: 40px !important;
     }
-    
+
     .stButton > button:hover {
         background-color: #0C6B5B !important;
     }
@@ -353,6 +372,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+
 # Then, update the input/button section
 with st.container():
     # Create two columns with a 6:1 ratio
@@ -363,7 +383,7 @@ with st.container():
         user_input = st.text_input(
             "",
             placeholder="Escribe tu mensaje aquí...",
-            key=f"user_input_{len(st.session_state.messages)}",
+            key=f"user_input_{selected_bot_id}",
             label_visibility="collapsed"
         )
 
@@ -374,25 +394,25 @@ with st.container():
     # Message handling (keep existing code)
     if send_button and user_input.strip():
         timestamp = datetime.now().strftime("%H:%M")
-
-        # Add user message to history
-        st.session_state.messages.append({
+        st.session_state.bot_messages[selected_bot_id].append({
             "role": "user",
             "content": user_input,
             "timestamp": timestamp
         })
 
         try:
+            # Send message to backend
             response = requests.post(
-                "http://localhost:8000/chat",
+                f"http://localhost:8000/chat/{selected_bot_id}",
                 json={"query": user_input}
             )
 
             if response.status_code == 200:
-                response_data = response.json()
-                st.session_state.messages.append({
+                bot_response = response.json()
+                # Add bot response to chat
+                st.session_state.bot_messages[selected_bot_id].append({
                     "role": "assistant",
-                    "content": response_data["response"],
+                    "content": bot_response["response"],
                     "timestamp": datetime.now().strftime("%H:%M")
                 })
             elif response.status_code == 400:
@@ -403,5 +423,4 @@ with st.container():
         except Exception as e:
             st.error(f"Error al procesar la consulta: {e}")
 
-        # Rerun to update the UI and clear the input
         st.rerun()
