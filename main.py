@@ -33,7 +33,7 @@ chat_memory = ChatMemoryBuffer.from_defaults(token_limit=2000)
 async def lifespan(app: FastAPI):
     # Initialize indices for all bots
     for bot_id in bot_config.bots:
-        initialize_index(bot_id)
+        initialize_bot(bot_id)
     yield
 
 
@@ -290,18 +290,27 @@ class BotConfig:
 
         # Initialize directories and collections
         for bot in self.bots.values():
-            os.makedirs(bot.data_dir, exist_ok=True)
-            self.chat_memories[bot.id] = ChatMemoryBuffer.from_defaults(
-                token_limit=2000)
+            self.initialize_bot_data(bot)
+
+    def initialize_bot_data(self, bot: Bot):
+        """Initializes the data directory and chat memory for a given bot."""
+        os.makedirs(bot.data_dir, exist_ok=True)
+        self.chat_memories[bot.id] = ChatMemoryBuffer.from_defaults(
+            token_limit=2000)
 
 
 bot_config = BotConfig()
 
 
 # Modified initialization function
-def initialize_index(bot_id: str):
+def initialize_bot(bot_id: str):
     """Initialize index for a specific bot."""
     bot = bot_config.bots[bot_id]
+    initialize_bot_index(bot)
+
+
+def initialize_bot_index(bot: Bot):
+    """Initializes the index for a given bot."""
     if os.path.exists(bot.data_dir) and os.listdir(bot.data_dir):
         try:
             documents = SimpleDirectoryReader(bot.data_dir).load_data()
@@ -313,18 +322,18 @@ def initialize_index(bot_id: str):
             storage_context = StorageContext.from_defaults(
                 vector_store=vector_store)
 
-            bot_config.indices[bot_id] = VectorStoreIndex.from_documents(
+            bot_config.indices[bot.id] = VectorStoreIndex.from_documents(
                 documents,
                 storage_context=storage_context,
                 show_progress=False
             )
-            print(f"Index initialized successfully for bot {bot_id}")
+            print(f"Index initialized successfully for bot {bot.id}")
         except Exception as e:
-            print(f"Error initializing index for bot {bot_id}: {e}")
-            bot_config.indices[bot_id] = None
+            print(f"Error initializing index for bot {bot.id}: {e}")
+            bot_config.indices[bot.id] = None
     else:
-        print(f"No documents found for bot {bot_id}")
-        bot_config.indices[bot_id] = None
+        print(f"No documents found for bot {bot.id}")
+        bot_config.indices[bot.id] = None
 
 
 # Modified endpoints
