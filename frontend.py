@@ -2,6 +2,7 @@ import streamlit as st
 from datetime import datetime
 import requests
 from typing import Optional, Dict, Any
+from styles import StyleManager
 
 
 class SessionManager:
@@ -147,94 +148,8 @@ with st.sidebar:
 
 # Chat interface
 
-# Replace all existing style sections with this single, consolidated one
-st.markdown("""
-<style>
-    /* Chat messages */
-    .chat-container {
-        padding: 20px;
-        max-width: 800px;
-        margin: 0 auto;
-    }
-    .user-message {
-        background-color: #128C7E;
-        color: white;
-        padding: 12px;
-        border-radius: 15px;
-        margin: 8px 0;
-        max-width: 70%;
-        margin-left: 30%;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-    }
-    .assistant-message {
-        background-color: #262626;
-        color: white;
-        padding: 12px;
-        border-radius: 15px;
-        margin: 8px 0;
-        max-width: 70%;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-    }
-    .timestamp {
-        font-size: 0.75em;
-        color: rgba(255,255,255,0.7);
-        margin-top: 4px;
-        text-align: right;
-    }
-
-    /* Input and button styling */
-    .stTextInput > div > div > input {
-        background-color: #E9FFE5 !important;
-        color: #333333 !important;
-        border: 1px solid #128C7E !important;
-        border-radius: 5px !important;
-        height: 46px !important;
-        line-height: 46px !important;
-        padding: 0 12px !important;
-        margin: 0 !important;
-    }
-    
-    .stButton > button {
-        background-color: #128C7E !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 5px !important;
-        height: 46px !important;
-        padding: 0 1.5rem !important;
-        margin: 0 !important;
-    }
-    
-    .stButton > button:hover {
-        background-color: #0C6B5B !important;
-    }
-
-    /* Column alignment */
-    [data-testid="column"] {
-        padding: 0 !important;
-        display: flex !important;
-        align-items: center !important;
-    }
-
-    /* Remove margins and padding */
-    .stTextInput, .stButton {
-        margin: 0 !important;
-    }
-    .stTextInput > div {
-        margin: 0 !important;
-    }
-
-    
-    [data-testid="column"]:has(button:contains("Eliminar")) button {
-        width: 100% !important;
-        min-width: 100px !important;  
-        white-space: nowrap !important;  /* Prevent text wrapping */
-        padding: 0 46px !important;  /* Add horizontal padding */
-        background-color: #808080 !important;
-    }
-
-    
-</style>
-""", unsafe_allow_html=True)
+# Apply styles (replace the existing st.markdown style section)
+StyleManager.apply_styles()
 
 # Chat interface
 chat_container = st.container()
@@ -263,51 +178,73 @@ with chat_container:
 # Input and button section
 if documents:  # Enable chat input only if there are files in the database
     with st.container():
-        cols = st.columns([6, 1])
+        # Create a form for the input field
+        with st.form(key=f"chat_input_form_{selected_bot_id}", clear_on_submit=True):
+            cols = st.columns([6, 1])
 
-        # Text input
-        with cols[0]:
-            user_input = st.text_input(
-                "",
-                placeholder="Escribe tu mensaje aquí...",
-                key=f"user_input_{selected_bot_id}",
-                label_visibility="collapsed"
-            )
+            # Text input in first column
+            with cols[0]:
+                user_input = st.text_input(
+                    "",
+                    placeholder="Escribe tu mensaje aquí...",
+                    key=f"user_input_{selected_bot_id}",
+                    label_visibility="collapsed"
+                )
 
-        # Send button
-        with cols[1]:
-            send_button = st.button("Enviar")
+            # Submit button in second column
+            with cols[1]:
+                submit_button = st.form_submit_button("Enviar")
 
-        # Message handling (keep existing code)
-        if send_button and user_input.strip():
+        # Handle form submission
+        if submit_button and user_input.strip():
+            # Store the user input before rerun
+            current_input = user_input.strip()
+
+            # Add user message immediately
             timestamp = datetime.now().strftime("%H:%M")
             st.session_state.bot_messages[selected_bot_id].append({
                 "role": "user",
-                "content": user_input,
+                "content": current_input,
                 "timestamp": timestamp
             })
 
-            try:
-                # Send message to backend
-                response = requests.post(
-                    f"http://localhost:8000/chat/{selected_bot_id}",
-                    json={"query": user_input}
-                )
+            # Store a flag to indicate we need to process this message
+            st.session_state.process_message = {
+                "bot_id": selected_bot_id,
+                "content": current_input
+            }
 
-                if response.status_code == 200:
-                    bot_response = response.json()
-                    # Add bot response to chat
-                    st.session_state.bot_messages[selected_bot_id].append({
-                        "role": "assistant",
-                        "content": bot_response["response"],
-                        "timestamp": datetime.now().strftime("%H:%M")
-                    })
-                elif response.status_code == 400:
-                    st.warning(
-                        "Por favor, sube un documento antes de realizar una consulta.")
-                else:
-                    st.error(f"Error en la solicitud: {response.status_code}")
-            except Exception as e:
-                st.error(f"Error al procesar la consulta: {e}")
-
+            # Rerun to show the user message
             st.rerun()
+
+# Check if we need to process a message (after the rerun)
+if "process_message" in st.session_state:
+    msg_data = st.session_state.process_message
+
+    try:
+        # Send message to backend
+        response = requests.post(
+            f"http://localhost:8000/chat/{msg_data['bot_id']}",
+            json={"query": msg_data["content"]}
+        )
+
+        if response.status_code == 200:
+            bot_response = response.json()
+            st.session_state.bot_messages[msg_data['bot_id']].append({
+                "role": "assistant",
+                "content": bot_response["response"],
+                "timestamp": datetime.now().strftime("%H:%M")
+            })
+        elif response.status_code == 400:
+            st.warning(
+                "Por favor, sube un documento antes de realizar una consulta.")
+        else:
+            st.error(f"Error en la solicitud: {response.status_code}")
+    except Exception as e:
+        st.error(f"Error al procesar la consulta: {e}")
+
+    # Clear the processing flag
+    del st.session_state.process_message
+
+    # Final rerun to show the bot response
+    st.rerun()

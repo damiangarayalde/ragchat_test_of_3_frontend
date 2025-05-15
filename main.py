@@ -9,7 +9,7 @@ import os
 from dotenv import load_dotenv
 from llama_index.llms.openai import OpenAI
 from typing import List, Dict, Optional
-from llama_index.core.memory import ChatMemoryBuffer  # Updated import path
+from llama_index.core.memory import ChatMemoryBuffer
 from pydantic import BaseModel
 import logging
 from utils import ErrorHandler, FileManager, ConfigManager
