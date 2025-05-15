@@ -78,41 +78,10 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("Documentos")
 
-    # File uploader with a dynamic key to reset its state
-    upload_key = f"uploader_{selected_bot_id}_{len(st.session_state.uploaded_files)}"
-
-    uploaded_file = st.file_uploader(
-        "Subir documento",
-        type=["pdf", "docx", "txt"],
-        key=upload_key
-    )
-
-    # File upload handling
-    if uploaded_file and uploaded_file.name not in st.session_state.uploaded_files:
-        try:
-            with st.spinner("Procesando archivo..."):
-                files = {"file": (uploaded_file.name,
-                                  uploaded_file.getvalue())}
-                response = requests.post(
-                    f"http://localhost:8000/upload/{selected_bot_id}",
-                    files=files
-                )
-                if response.status_code == 200:
-                    st.sidebar.success(
-                        f"Documento '{uploaded_file.name}' subido correctamente")
-                    # Add the file to the session state to prevent re-upload
-                    st.session_state.uploaded_files.add(uploaded_file.name)
-                    # Trigger a rerun to refresh the document list
-                    st.rerun()
-                else:
-                    st.sidebar.error("Error al subir el archivo")
-        except Exception as e:
-            st.error(f"Error al subir el archivo: {e}")
-
     # Document list
     documents = fetch_documents(selected_bot_id)
     if documents:
-        st.write("Archivos indexados:")
+        st.subheader("Archivos indexados:")
         for doc in documents:
             # Adjust column ratio for better layout
             col1, col2 = st.columns([8, 1])
@@ -138,6 +107,37 @@ with st.sidebar:
                     st.error(f"Error al eliminar el documento: {e}")
     else:
         st.write("No hay documentos disponibles")
+
+    # File uploader
+    st.markdown("---")
+    st.subheader("Subir documento")
+    upload_key = f"uploader_{selected_bot_id}_{len(st.session_state.uploaded_files)}"
+    uploaded_file = st.file_uploader(
+        "Subir documento",
+        type=["pdf", "docx", "txt"],
+        key=upload_key
+    )
+
+    # File upload handling
+    if uploaded_file and uploaded_file.name not in st.session_state.uploaded_files:
+        try:
+            with st.spinner("Procesando archivo..."):
+                files = {"file": (uploaded_file.name,
+                                  uploaded_file.getvalue())}
+                response = requests.post(
+                    f"http://localhost:8000/upload/{selected_bot_id}",
+                    files=files
+                )
+                if response.status_code == 200:
+                    st.sidebar.success(
+                        f"Documento '{uploaded_file.name}' subido correctamente")
+                    # Add the file to the session state to prevent re-upload
+                    st.session_state.uploaded_files.add(uploaded_file.name)
+                    st.rerun()
+                else:
+                    st.sidebar.error("Error al subir el archivo")
+        except Exception as e:
+            st.error(f"Error al subir el archivo: {e}")
 
 # Chat interface
 
@@ -228,6 +228,16 @@ st.markdown("""
         white-space: nowrap !important;  /* Prevent text wrapping */
         padding: 0 16px !important;  /* Add horizontal padding */
         background-color: #128C7E !important;
+    }
+
+    /* Update CSS for the "Eliminar" button */
+    [data-testid="column"]:has(button:contains("Eliminar")) button {
+        width: 120% !important;  /* Make the button wider */
+        background-color: #808080 !important;  /* Set grey color */
+        color: white !important;
+        border: none !important;
+        border-radius: 5px !important;
+        padding: 0 16px !important;  /* Add horizontal padding */
     }
 </style>
 """, unsafe_allow_html=True)
