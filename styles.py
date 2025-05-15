@@ -82,6 +82,8 @@ class StyleManager:
             padding: 0 !important;
             display: flex !important;
             align-items: center !important;
+            margin: 0 !important;
+            gap: 0.5rem !important;
         }
 
         .stTextInput, .stButton {
@@ -91,6 +93,50 @@ class StyleManager:
         .stTextInput > div {
             margin: 0 !important;
         }
+
+        /* Form styling #########*/
+        [data-testid="stForm"] {
+            border: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            background: none !important;
+        }
+
+        /* Input styling */
+        .stTextInput > div {
+            border: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+
+        .stTextInput > div > div > input {
+            background-color: #E9FFE5 !important;
+            color: #333333 !important;
+            border: none !important;
+            border-radius: 5px !important;
+            height: 46px !important;
+            padding: 0 12px !important;
+            margin: 0 !important;
+            box-shadow: none !important;
+        }
+
+        /* Button styling */
+        .stButton {
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        .stButton > button {
+            background-color: #128C7E !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 5px !important;
+            height: 46px !important;
+            # padding: 0 1.5rem !important;
+            margin: 0 !important;
+            box-shadow: none !important;
+        }
+
         """
 
     @staticmethod
