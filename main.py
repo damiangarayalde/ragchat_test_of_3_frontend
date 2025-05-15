@@ -161,8 +161,7 @@ async def clear_chat_history():
     except Exception as e:
         print(f"Error clearing chat history: {e}")
         raise HTTPException(
-            status_code=500,
-            detail="Failed to clear chat history"
+            status_code=500, detail="Failed to clear chat history"
         )
 
 
@@ -270,7 +269,7 @@ class BotConfig:
         self.bots: Dict[str, Bot] = {
             "bot1": Bot(
                 id="bot1",
-                name="Asistente General",
+                name="Derechos Humanos",
                 description="Asistente general para consultas de documentos",
                 system_prompt="Responde siempre en español de manera formal y técnica.",
                 collection_name="documents_collection_bot1",
@@ -278,7 +277,7 @@ class BotConfig:
             ),
             "bot2": Bot(
                 id="bot2",
-                name="Asistente Técnico",
+                name="Penal II",
                 description="Especialista en documentación técnica",
                 system_prompt="Responde en español, enfocándote en detalles técnicos y específicos.",
                 collection_name="documents_collection_bot2",
@@ -377,6 +376,7 @@ async def upload_file(bot_id: str, file: UploadFile = File(...)):
         )
 
         return {"status": "File uploaded and added to the index successfully"}
+
     except Exception as e:
         print(f"Error updating index for bot {bot_id}: {e}")
         raise HTTPException(
@@ -441,4 +441,61 @@ async def get_documents(bot_id: str):
         print(f"Error retrieving documents for bot {bot_id}: {e}")
         raise HTTPException(
             status_code=500, detail="Failed to retrieve documents"
+        )
+
+
+@app.delete("/documents/{bot_id}/{filename}")
+async def delete_document(bot_id: str, filename: str):
+    """Delete a file and update the vector index for a specific bot."""
+    if bot_id not in bot_config.bots:
+        raise HTTPException(status_code=404, detail="Bot not found")
+
+    bot = bot_config.bots[bot_id]
+    file_path = os.path.join(bot.data_dir, filename)
+
+    try:
+        # Delete the file from the bot's data directory
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        else:
+            raise HTTPException(status_code=404, detail="File not found")
+
+        # Clear the existing collection to remove old vectors
+        try:
+            chroma_client.delete_collection(bot.collection_name)
+        except Exception as e:
+            print(
+                f"Warning: Could not delete collection for bot {bot_id}: {e}")
+
+        # Reset chat memory for this bot with a new instance
+        bot_config.chat_memories[bot_id] = ChatMemoryBuffer.from_defaults(
+            token_limit=2000)
+
+        # Rebuild the index after deletion if there are remaining files
+        if os.listdir(bot.data_dir):
+            documents = SimpleDirectoryReader(bot.data_dir).load_data()
+            # Create a new collection
+            collection = chroma_client.create_collection(
+                name=bot.collection_name,
+                metadata={"hnsw:space": "cosine"}
+            )
+            vector_store = ChromaVectorStore(chroma_collection=collection)
+            storage_context = StorageContext.from_defaults(
+                vector_store=vector_store
+            )
+            bot_config.indices[bot_id] = VectorStoreIndex.from_documents(
+                documents,
+                storage_context=storage_context,
+                show_progress=False
+            )
+        else:
+            # Clear the vector store if no documents remain
+            bot_config.indices[bot_id] = None
+
+        return {"status": f"Document '{filename}' deleted successfully"}
+
+    except Exception as e:
+        print(f"Error deleting document for bot {bot_id}: {e}")
+        raise HTTPException(
+            status_code=500, detail="Failed to delete the document"
         )

@@ -52,7 +52,7 @@ with st.sidebar:
     bot_options = {bot["name"]: bot["id"] for bot in bots}
 
     selected_bot_name = st.selectbox(
-        "Selecciona un asistente",
+        "Selecciona una materia:",
         options=list(bot_options.keys()),
         key="bot_selector"
     )
@@ -73,18 +73,21 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("Documentos")
 
+    # File uploader with key based on bot ID and a random component to force reset
+    upload_key = f"uploader_{selected_bot_id}"
+
     # File uploader
     uploaded_file = st.file_uploader(
         "Subir documento",
         type=["pdf", "docx", "txt"],
-        key=f"uploader_{selected_bot_id}"
+        key=upload_key
     )
 
+    # File upload handling
     if uploaded_file:
         try:
             with st.spinner("Procesando archivo..."):
                 files = {"file": (uploaded_file.name,
-
                                   uploaded_file.getvalue())}
                 response = requests.post(
                     f"http://localhost:8000/upload/{selected_bot_id}",
@@ -92,9 +95,10 @@ with st.sidebar:
                 )
                 if response.status_code == 200:
                     st.sidebar.success(
-                        f"Documento '{doc}' eliminado correctamente.")
-# Trigger a page reload
+                        f"Documento '{uploaded_file.name}' subido correctamente")
                     st.rerun()
+                else:
+                    st.sidebar.error("Error al subir el archivo")
         except Exception as e:
             st.error(f"Error al subir el archivo: {e}")
 
@@ -102,9 +106,14 @@ with st.sidebar:
     documents = fetch_documents(selected_bot_id)
     if documents:
         for doc in documents:
-            col1, col2 = st.columns([3, 1])
+            # Changed column ratio from [3, 1] to [2, 1] to give more space to the button
+            col1, col2 = st.columns([2, 1])
             col1.write(doc)
-            if col2.button("Eliminar", key=f"delete_{doc}_{selected_bot_id}"):
+            if col2.button(
+                "Eliminar",
+                key=f"delete_{doc}_{selected_bot_id}",
+                use_container_width=True  # Make button use full column width
+            ):
                 try:
                     response = requests.delete(
                         f"http://localhost:8000/documents/{selected_bot_id}/{doc}"
@@ -124,16 +133,18 @@ with st.sidebar:
 # Replace all existing style sections with this single, consolidated one
 st.markdown("""
 <style>
-    /* Chat messages styling */
+    /* Chat messages */
     .chat-container {
         padding: 20px;
+        max-width: 800px;
+        margin: 0 auto;
     }
     .user-message {
         background-color: #128C7E;
         color: white;
         padding: 12px;
         border-radius: 15px;
-        margin: 8px 8px;
+        margin: 8px 0;
         max-width: 70%;
         margin-left: 30%;
         box-shadow: 0 1px 2px rgba(0,0,0,0.1);
@@ -153,77 +164,67 @@ st.markdown("""
         margin-top: 4px;
         text-align: right;
     }
-    .message-content {
-        margin-bottom: 4px;
-        line-height: 1.4;
-    }
 
-    /* Input and button container */
-    .chat-input-container {
-        display: flex !important;
-        align-items: center !important;
-        gap: 10px !important;
-        padding: 1rem !important;
-        width: 100% !important;
-    }
-
-    /* Column container */
-    [data-testid="column"] {
-        padding: 0 !important;
-        margin: 0 !important;
-        display: flex !important;
-        align-items: center !important;
-        gap: 0 !important;
-    }
-
-    /* Text input styling */
-    .stTextInput {
-        margin: 0 !important;
-    }
-    .stTextInput > div {
-        margin: 0 !important;
-    }
+    /* Input and button styling */
     .stTextInput > div > div > input {
         background-color: #E9FFE5 !important;
         color: #333333 !important;
         border: 1px solid #128C7E !important;
         border-radius: 5px !important;
-        height: 42px !important;
-        min-height: 42px !important;
-        max-height: 42px !important;
+        height: 46px !important;
+        line-height: 46px !important;
         padding: 0 12px !important;
         margin: 0 !important;
-        line-height: 42px !important;
     }
-
-    /* Button styling */
-    .stButton {
-        margin: 0 !important;
-        display: flex !important;
-        align-items: center !important;
-    }
+    
     .stButton > button {
         background-color: #128C7E !important;
         color: white !important;
         border: none !important;
         border-radius: 5px !important;
-        height: 42px !important;
-        min-height: 42px !important;
-        max-height: 42px !important;
+        height: 46px !important;
         padding: 0 1.5rem !important;
         margin: 0 !important;
-        line-height: 42px !important;
     }
+    
     .stButton > button:hover {
         background-color: #0C6B5B !important;
+    }
+
+    /* Column alignment */
+    [data-testid="column"] {
+        padding: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+    }
+
+    /* Remove margins and padding */
+    .stTextInput, .stButton {
+        margin: 0 !important;
+    }
+    .stTextInput > div {
+        margin: 0 !important;
+    }
+
+    /* Delete button specific styling */
+    [data-testid="column"]:has(button:contains("Eliminar")) {
+        padding-left: 8px !important;  /* Add some spacing between filename and button */
+    }
+    
+    [data-testid="column"]:has(button:contains("Eliminar")) button {
+        width: 100% !important;
+        min-width: 100px !important;  /* Ensure minimum width */
+        white-space: nowrap !important;  /* Prevent text wrapping */
+        padding: 0 16px !important;  /* Add horizontal padding */
+        background-color: #128C7E !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Crear un contenedor para el chat
+# Chat interface
 chat_container = st.container()
 
-# Mostrar los mensajes del chat dentro del contenedor
+# Display chat messages
 with chat_container:
     for message in st.session_state.bot_messages.get(selected_bot_id, []):
         if message["role"] == "user":
@@ -241,141 +242,8 @@ with chat_container:
                 </div>
             """, unsafe_allow_html=True)
 
-# Input del usuario (mover al final de la página)
-st.markdown("""
-<style>
-    /* Chat input container and elements */
-    .chat-input-container {
-        display: flex !important;
-        justify-content: center !important;
-        align-items: stretch !important;
-        gap: 10px !important;
-        padding: 1rem !important;
-        max-width: 800px !important;
-        margin: 0 auto !important;
-    }
-
-    /* Reset Streamlit's default styles */
-    .stTextInput > div {
-        margin-bottom: 0 !important;
-    }
-
-    .stTextInput > div > div {
-        margin-bottom: 0 !important;
-    }
-
-    /* Input field styles */
-    .stTextInput > div > div > input {
-        background-color: #E9FFE5 !important;
-        color: #333333 !important;
-        border: 1px solid #128C7E !important;
-        border-radius: 5px !important;
-        height: 40px !important;
-        min-height: 40px !important;
-        max-height: 40px !important;
-        padding: 0 12px !important;
-        margin: 0 !important;
-        line-height: 40px !important;
-    }
-
-    /* Button container and button styles */
-    .stButton {
-        height: 40px !important;
-        margin-top: 0 !important;
-    }
-
-    .stButton > button {
-        background-color: #128C7E !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 5px !important;
-        height: 40px !important;
-        min-height: 40px !important;
-        max-height: 40px !important;
-        margin: 0 !important;
-        padding: 0 1.5rem !important;
-        line-height: 40px !important;
-    }
-
-    .stButton > button:hover {
-        background-color: #0C6B5B !important;
-    }
-
-    /* Column styles */
-    [data-testid="column"] {
-        padding: 0 !important;
-        display: flex !important;
-        align-items: center !important;
-    }
-</style>
-""", unsafe_allow_html=True)
-# First, update the style section for input and button alignment
-st.markdown("""
-<style>
-    /* Container for input and button */
-    .chat-input-container {
-        display: flex !important;
-        align-items: center !important;
-        gap: 10px !important;
-        padding: 1rem !important;
-        width: 100% !important;
-    }
-
-    /* Column container */
-    [data-testid="column"] {
-        padding: 0 !important;
-        display: flex !important;
-        align-items: center !important;
-    }
-
-    /* Text input styling */
-    .stTextInput {
-        margin: 0 !important;
-    }
-
-    .stTextInput > div {
-        margin: 0 !important;
-    }
-
-    .stTextInput > div > div > input {
-        background-color: #E9FFE5 !important;
-        color: #333333 !important;
-        border: 1px solid #128C7E !important;
-        border-radius: 5px !important;
-        height: 46px !important;
-        min-height: 46px !important;
-        padding: 0 12px !important;
-        margin: 0 !important;
-    }
-
-    /* Button styling */
-    .stButton {
-        margin: 0 !important;
-        display: flex !important;
-        align-items: center !important;
-    }
-
-    .stButton > button {
-        background-color: #128C7E !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 5px !important;
-        height: 46px !important;
-        min-height: 46px !important;
-        padding: 0 1.5rem !important;
-        margin: 0 !important;
-    }
-
-    .stButton > button:hover {
-        background-color: #0C6B5B !important;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-
-# Then, update the input/button section
+# Input and button section
 with st.container():
-    # Create two columns with a 6:1 ratio
     cols = st.columns([6, 1])
 
     # Text input
