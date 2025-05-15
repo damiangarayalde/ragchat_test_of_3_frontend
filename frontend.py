@@ -232,69 +232,73 @@ chat_container = st.container()
 
 # Display chat messages
 with chat_container:
-    for message in st.session_state.bot_messages.get(selected_bot_id, []):
-        if message["role"] == "user":
-            st.markdown(f"""
-                <div class="user-message">
-                    <div class="message-content">{message["content"]}</div>
-                    <div class="timestamp">{message["timestamp"]}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-                <div class="assistant-message">
-                    <div class="message-content">{message["content"]}</div>
-                    <div class="timestamp">{message["timestamp"]}</div>
-                </div>
-            """, unsafe_allow_html=True)
+    if not documents:  # Check if there are no files in the database
+        st.warning("Para poder chatear primero subí algún archivo.")
+    else:
+        for message in st.session_state.bot_messages.get(selected_bot_id, []):
+            if message["role"] == "user":
+                st.markdown(f"""
+                    <div class="user-message">
+                        <div class="message-content">{message["content"]}</div>
+                        <div class="timestamp">{message["timestamp"]}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                    <div class="assistant-message">
+                        <div class="message-content">{message["content"]}</div>
+                        <div class="timestamp">{message["timestamp"]}</div>
+                    </div>
+                """, unsafe_allow_html=True)
 
 # Input and button section
-with st.container():
-    cols = st.columns([6, 1])
+if documents:  # Enable chat input only if there are files in the database
+    with st.container():
+        cols = st.columns([6, 1])
 
-    # Text input
-    with cols[0]:
-        user_input = st.text_input(
-            "",
-            placeholder="Escribe tu mensaje aquí...",
-            key=f"user_input_{selected_bot_id}",
-            label_visibility="collapsed"
-        )
-
-    # Send button
-    with cols[1]:
-        send_button = st.button("Enviar")
-
-    # Message handling (keep existing code)
-    if send_button and user_input.strip():
-        timestamp = datetime.now().strftime("%H:%M")
-        st.session_state.bot_messages[selected_bot_id].append({
-            "role": "user",
-            "content": user_input,
-            "timestamp": timestamp
-        })
-
-        try:
-            # Send message to backend
-            response = requests.post(
-                f"http://localhost:8000/chat/{selected_bot_id}",
-                json={"query": user_input}
+        # Text input
+        with cols[0]:
+            user_input = st.text_input(
+                "",
+                placeholder="Escribe tu mensaje aquí...",
+                key=f"user_input_{selected_bot_id}",
+                label_visibility="collapsed"
             )
 
-            if response.status_code == 200:
-                bot_response = response.json()
-                # Add bot response to chat
-                st.session_state.bot_messages[selected_bot_id].append({
-                    "role": "assistant",
-                    "content": bot_response["response"],
-                    "timestamp": datetime.now().strftime("%H:%M")
-                })
-            elif response.status_code == 400:
-                st.warning(
-                    "Por favor, sube un documento antes de realizar una consulta.")
-            else:
-                st.error(f"Error en la solicitud: {response.status_code}")
-        except Exception as e:
-            st.error(f"Error al procesar la consulta: {e}")
+        # Send button
+        with cols[1]:
+            send_button = st.button("Enviar")
 
-        st.rerun()
+        # Message handling (keep existing code)
+        if send_button and user_input.strip():
+            timestamp = datetime.now().strftime("%H:%M")
+            st.session_state.bot_messages[selected_bot_id].append({
+                "role": "user",
+                "content": user_input,
+                "timestamp": timestamp
+            })
+
+            try:
+                # Send message to backend
+                response = requests.post(
+                    f"http://localhost:8000/chat/{selected_bot_id}",
+                    json={"query": user_input}
+                )
+
+                if response.status_code == 200:
+                    bot_response = response.json()
+                    # Add bot response to chat
+                    st.session_state.bot_messages[selected_bot_id].append({
+                        "role": "assistant",
+                        "content": bot_response["response"],
+                        "timestamp": datetime.now().strftime("%H:%M")
+                    })
+                elif response.status_code == 400:
+                    st.warning(
+                        "Por favor, sube un documento antes de realizar una consulta.")
+                else:
+                    st.error(f"Error en la solicitud: {response.status_code}")
+            except Exception as e:
+                st.error(f"Error al procesar la consulta: {e}")
+
+            st.rerun()
