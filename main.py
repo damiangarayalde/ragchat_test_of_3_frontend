@@ -12,6 +12,7 @@ from typing import List, Dict, Optional
 from llama_index.core.memory import ChatMemoryBuffer  # Updated import path
 from pydantic import BaseModel
 import logging
+from utils import ErrorHandler, FileManager, ConfigManager
 
 # Configure logging
 logging.basicConfig(
@@ -110,44 +111,56 @@ class IndexManager:
             return False
 
 
-class BotConfig:
+class BotManager:
+    """Centralizes bot initialization and management."""
+
     def __init__(self):
         self.chroma_manager = ChromaManager()
         self.index_manager = IndexManager(self.chroma_manager)
-        self.bots: Dict[str, Bot] = {
-            "bot1": Bot(
-                id="bot1",
-                name="Derechos Humanos",
-                description="Asistente general para consultas de documentos",
-                system_prompt="Responde siempre en español de manera formal y técnica.",
-                collection_name="documents_collection_bot1",
-                data_dir="./data_bot1"
-            ),
-            "bot2": Bot(
-                id="bot2",
-                name="Penal II",
-                description="Especialista en documentación técnica",
-                system_prompt="Responde en español, enfocándote en detalles técnicos y específicos.",
-                collection_name="documents_collection_bot2",
-                data_dir="./data_bot2"
-            ),
+        self.file_manager = FileManager()
+        self.error_handler = ErrorHandler()
+
+        # Load bot configurations
+        bot_configs = ConfigManager.load_bot_config()
+        self.bots = {
+            bot_id: Bot(**config)
+            for bot_id, config in bot_configs.items()
         }
+
         self.indices: Dict[str, VectorStoreIndex] = {}
         self.chat_memories: Dict[str, ChatMemoryBuffer] = {}
 
-        # Initialize each bot
+        # Initialize all bots
+        self.initialize_all_bots()
+
+    def initialize_all_bots(self) -> None:
+        """Initialize all bots at once."""
         for bot in self.bots.values():
-            self.initialize_bot(bot)
+            self.initialize_single_bot(bot)
 
-    def initialize_bot(self, bot: Bot) -> None:
-        """Initialize a bot's data directory, chat memory, and index."""
-        os.makedirs(bot.data_dir, exist_ok=True)
-        self.chat_memories[bot.id] = ChatMemoryBuffer.from_defaults(
-            token_limit=2000)
-        self.indices[bot.id] = self.index_manager.build_or_update_index(bot)
+    def initialize_single_bot(self, bot: Bot) -> None:
+        """Initialize a single bot's components."""
+        try:
+            # Ensure bot directory exists
+            self.file_manager.ensure_directory(bot.data_dir)
+
+            # Initialize chat memory
+            self.chat_memories[bot.id] = ChatMemoryBuffer.from_defaults(
+                token_limit=2000
+            )
+
+            # Build or update index
+            self.indices[bot.id] = self.index_manager.build_or_update_index(
+                bot)
+
+            logger.info(f"Bot {bot.id} initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize bot {bot.id}: {e}")
+            self.indices[bot.id] = None
 
 
-bot_config = BotConfig()
+# Initialize the bot manager
+bot_manager = BotManager()
 
 # FastAPI setup
 app = FastAPI(
@@ -165,8 +178,8 @@ app.add_middleware(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    for bot in bot_config.bots.values():
-        bot_config.initialize_bot(bot)
+    for bot in bot_manager.bots.values():
+        bot_manager.initialize_single_bot(bot)
     yield
 
 # The rest of your endpoints remain the same, but remove the old endpoints
@@ -182,48 +195,43 @@ async def get_bots():
                 "id": bot.id,
                 "name": bot.name,
                 "description": bot.description
-            } for bot in bot_config.bots.values()
+            } for bot in bot_manager.bots.values()
         ]
     }
 
 
 @app.post("/upload/{bot_id}")
 async def upload_file(bot_id: str, file: UploadFile = File(...)):
-    if bot_id not in bot_config.bots:
+    if bot_id not in bot_manager.bots:
         raise HTTPException(status_code=404, detail="Bot not found")
 
-    bot = bot_config.bots[bot_id]
-
-    # Save the uploaded file
-    os.makedirs(bot.data_dir, exist_ok=True)
-    file_path = f"{bot.data_dir}/{file.filename}"
-    with open(file_path, "wb") as f:
-        f.write(await file.read())
-
-    # Rebuild the index
     try:
-        print(
-            f"Adding new file to the index for bot {bot_id}: {file.filename}")
-        bot_config.indices[bot_id] = bot_config.index_manager.build_or_update_index(
+        bot = bot_manager.bots[bot_id]
+        file_path = f"{bot.data_dir}/{file.filename}"
+
+        # Save file
+        with open(file_path, "wb") as f:
+            f.write(await file.read())
+
+        # Update index
+        bot_manager.indices[bot_id] = bot_manager.index_manager.build_or_update_index(
             bot)
-        if bot_config.indices[bot_id] is None:
-            raise HTTPException(
-                status_code=500, detail="Failed to build index")
-        return {"status": "File uploaded and added to the index successfully"}
+        if bot_manager.indices[bot_id] is None:
+            raise Exception("Failed to build index")
+
+        return {"status": "File uploaded and indexed successfully"}
     except Exception as e:
-        print(f"Error updating index for bot {bot_id}: {e}")
-        raise HTTPException(
-            status_code=500, detail="Failed to update the index")
+        raise ErrorHandler.handle_api_error("upload file", e, bot_id)
 
 
 @app.post("/chat/{bot_id}")
 async def chat(bot_id: str, query: str = Body(..., embed=True)):
-    if bot_id not in bot_config.bots:
+    if bot_id not in bot_manager.bots:
         raise HTTPException(status_code=404, detail="Bot not found")
 
-    bot = bot_config.bots[bot_id]
-    index = bot_config.indices.get(bot_id)
-    chat_memory = bot_config.chat_memories.get(bot_id)
+    bot = bot_manager.bots[bot_id]
+    index = bot_manager.indices.get(bot_id)
+    chat_memory = bot_manager.chat_memories.get(bot_id)
 
     if index is None:
         raise HTTPException(
@@ -259,10 +267,10 @@ async def chat(bot_id: str, query: str = Body(..., embed=True)):
 
 @app.get("/documents/{bot_id}")
 async def get_documents(bot_id: str):
-    if bot_id not in bot_config.bots:
+    if bot_id not in bot_manager.bots:
         raise HTTPException(status_code=404, detail="Bot not found")
 
-    bot = bot_config.bots[bot_id]
+    bot = bot_manager.bots[bot_id]
 
     try:
         if not os.path.exists(bot.data_dir):
@@ -279,18 +287,18 @@ async def get_documents(bot_id: str):
 @app.delete("/documents/{bot_id}/{filename}")
 async def delete_document(bot_id: str, filename: str):
     """Delete a file and update the vector index for a specific bot."""
-    if bot_id not in bot_config.bots:
+    if bot_id not in bot_manager.bots:
         raise HTTPException(status_code=404, detail="Bot not found")
 
-    bot = bot_config.bots[bot_id]
+    bot = bot_manager.bots[bot_id]
 
-    success = await bot_config.index_manager.delete_document(bot, filename)
+    success = await bot_manager.index_manager.delete_document(bot, filename)
     if not success:
         raise HTTPException(
             status_code=404, detail="File not found or error during deletion")
 
     # Reset chat memory
-    bot_config.chat_memories[bot_id] = ChatMemoryBuffer.from_defaults(
+    bot_manager.chat_memories[bot_id] = ChatMemoryBuffer.from_defaults(
         token_limit=2000)
 
     return {"status": f"Document '{filename}' deleted successfully"}

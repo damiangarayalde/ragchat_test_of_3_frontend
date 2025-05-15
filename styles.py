@@ -1,0 +1,102 @@
+import streamlit as st
+
+
+class StyleManager:
+    """Manages CSS styles for the application."""
+
+    @staticmethod
+    def get_base_styles() -> str:
+        return """
+        /* Chat messages */
+        .chat-container {
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        /* Message styles */
+        .user-message, .assistant-message {
+            padding: 12px;
+            border-radius: 15px;
+            margin: 8px 0;
+            max-width: 70%;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        
+        .user-message {
+            background-color: #128C7E;
+            color: white;
+            margin-left: 30%;
+        }
+        
+        .assistant-message {
+            background-color: #262626;
+            color: white;
+        }
+        
+        .timestamp {
+            font-size: 0.75em;
+            color: rgba(255,255,255,0.7);
+            margin-top: 4px;
+            text-align: right;
+        }
+
+        /* Input styling */
+        .stTextInput > div > div > input {
+            background-color: #E9FFE5 !important;
+            color: #333333 !important;
+            border: 1px solid #128C7E !important;
+            border-radius: 5px !important;
+            height: 46px !important;
+            line-height: 46px !important;
+            padding: 0 12px !important;
+            margin: 0 !important;
+        }
+        
+        /* Button styling */
+        .stButton > button {
+            background-color: #128C7E !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 5px !important;
+            height: 46px !important;
+            padding: 0 1.5rem !important;
+            margin: 0 !important;
+        }
+        
+        .stButton > button:hover {
+            background-color: #0C6B5B !important;
+        }
+
+        /* Delete button styling */
+        [data-testid="column"]:has(button:contains("Eliminar")) button {
+            width: 100% !important;
+            min-width: 100px !important;
+            white-space: nowrap !important;
+            padding: 0 46px !important;
+            background-color: #808080 !important;
+        }
+
+        /* Layout adjustments */
+        [data-testid="column"] {
+            padding: 0 !important;
+            display: flex !important;
+            align-items: center !important;
+        }
+
+        .stTextInput, .stButton {
+            margin: 0 !important;
+        }
+        
+        .stTextInput > div {
+            margin: 0 !important;
+        }
+        """
+
+    @staticmethod
+    def apply_styles() -> None:
+        """Apply all styles to the Streamlit app."""
+        st.markdown(
+            f"<style>{StyleManager.get_base_styles()}</style>",
+            unsafe_allow_html=True
+        )

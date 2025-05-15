@@ -1,49 +1,58 @@
 import streamlit as st
-import requests
 from datetime import datetime
-
-# Initialize bot selection and chat histories in session state
-if "active_bot" not in st.session_state:
-    st.session_state.active_bot = None
-
-if "bot_messages" not in st.session_state:
-    st.session_state.bot_messages = {}
-
-# Initialize session state for file upload tracking
-if "uploaded_files" not in st.session_state:
-    # Track uploaded files for the current session
-    st.session_state.uploaded_files = set()
-
-# Function to fetch available bots
+import requests
+from typing import Optional, Dict, Any
 
 
-def fetch_bots():
-    try:
-        response = requests.get("http://localhost:8000/bots")
-        if response.status_code == 200:
-            return response.json().get("bots", [])
-        else:
-            st.error("Error al obtener la lista de bots.")
+class SessionManager:
+    """Manages Streamlit session state."""
+
+    @staticmethod
+    def initialize_session():
+        """Initialize all required session state variables."""
+        if "active_bot" not in st.session_state:
+            st.session_state.active_bot = None
+        if "bot_messages" not in st.session_state:
+            st.session_state.bot_messages = {}
+        if "uploaded_files" not in st.session_state:
+            st.session_state.uploaded_files = set()
+
+
+class APIClient:
+    """Handles API communication."""
+
+    def __init__(self, base_url: str = "http://localhost:8000"):
+        self.base_url = base_url
+
+    def fetch_bots(self) -> list:
+        """Fetch available bots from the API."""
+        try:
+            response = requests.get(f"{self.base_url}/bots")
+            if response.status_code == 200:
+                return response.json().get("bots", [])
             return []
-    except Exception as e:
-        st.error(f"Error: {e}")
-        return []
-
-# Function to fetch documents for specific bot
-
-
-def fetch_documents(bot_id):
-    try:
-        response = requests.get(f"http://localhost:8000/documents/{bot_id}")
-        if response.status_code == 200:
-            return response.json().get("documents", [])
-        else:
-            st.sidebar.error("Error al obtener la lista de documentos.")
+        except Exception as e:
+            st.error(f"Error fetching bots: {e}")
             return []
-    except Exception as e:
-        st.sidebar.error(f"Error: {e}")
-        return []
 
+    def fetch_documents(self, bot_id: str) -> list:
+        """Fetch documents for a specific bot."""
+        try:
+            response = requests.get(f"{self.base_url}/documents/{bot_id}")
+            if response.status_code == 200:
+                return response.json().get("documents", [])
+            return []
+        except Exception as e:
+            st.error(f"Error fetching documents: {e}")
+            return []
+
+
+# Initialize managers
+session_manager = SessionManager()
+api_client = APIClient()
+
+# Initialize session state
+session_manager.initialize_session()
 
 # Main title
 st.title("Multi-Bot Chat System")
@@ -53,7 +62,7 @@ with st.sidebar:
     st.title("Configuración")
 
     # Bot selection
-    bots = fetch_bots()
+    bots = api_client.fetch_bots()
     bot_options = {bot["name"]: bot["id"] for bot in bots}
 
     selected_bot_name = st.selectbox(
@@ -79,7 +88,7 @@ with st.sidebar:
 
     # Document list
     st.subheader("Tu biblioteca:")
-    documents = fetch_documents(selected_bot_id)
+    documents = api_client.fetch_documents(selected_bot_id)
     if documents:
         for doc in documents:
             # Adjust column ratio for better layout
