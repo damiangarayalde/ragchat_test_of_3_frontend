@@ -264,8 +264,86 @@ class Bot(BaseModel):
     data_dir: str
 
 
+class ChromaManager:
+    """Manages ChromaDB operations for each bot."""
+
+    def __init__(self, base_dir: str = "./chroma-data"):
+        self.base_dir = base_dir
+        self.client = chromadb.PersistentClient(path=base_dir)
+
+    def get_collection(self, name: str, create: bool = True) -> chromadb.Collection:
+        """Get or create a collection for a specific bot."""
+        if create:
+            return self.client.get_or_create_collection(
+                name=name,
+                metadata={"hnsw:space": "cosine"}
+            )
+        return self.client.get_collection(name)
+
+    def delete_collection(self, name: str) -> None:
+        """Safely delete a collection."""
+        try:
+            self.client.delete_collection(name)
+        except Exception as e:
+            print(f"Warning: Could not delete collection {name}: {e}")
+
+
+class IndexManager:
+    """Manages vector index operations."""
+
+    def __init__(self, chroma_manager: ChromaManager):
+        self.chroma_manager = chroma_manager
+
+    def build_or_update_index(self, bot: Bot) -> Optional[VectorStoreIndex]:
+        """Build or update index for a specific bot."""
+        try:
+            if not os.path.exists(bot.data_dir) or not os.listdir(bot.data_dir):
+                return None
+
+            documents = SimpleDirectoryReader(bot.data_dir).load_data()
+            collection = self.chroma_manager.get_collection(
+                bot.collection_name)
+            vector_store = ChromaVectorStore(chroma_collection=collection)
+            storage_context = StorageContext.from_defaults(
+                vector_store=vector_store)
+
+            return VectorStoreIndex.from_documents(
+                documents,
+                storage_context=storage_context,
+                show_progress=False
+            )
+        except Exception as e:
+            print(f"Error building index for bot {bot.id}: {e}")
+            return None
+
+    async def delete_document(self, bot: Bot, filename: str) -> bool:
+        """Delete a document and update the index."""
+        file_path = os.path.join(bot.data_dir, filename)
+
+        if not os.path.exists(file_path):
+            return False
+
+        try:
+            # Delete the file
+            os.remove(file_path)
+
+            # Clear the collection
+            self.chroma_manager.delete_collection(bot.collection_name)
+
+            # Rebuild index if there are remaining files
+            if os.listdir(bot.data_dir):
+                return bool(self.build_or_update_index(bot))
+            return True
+        except Exception as e:
+            print(f"Error deleting document {filename} for bot {bot.id}: {e}")
+            return False
+
+
+# Update BotConfig to use the new managers
 class BotConfig:
     def __init__(self):
+        self.chroma_manager = ChromaManager()
+        self.index_manager = IndexManager(self.chroma_manager)
         self.bots: Dict[str, Bot] = {
             "bot1": Bot(
                 id="bot1",
@@ -288,15 +366,16 @@ class BotConfig:
         self.indices: Dict[str, VectorStoreIndex] = {}
         self.chat_memories: Dict[str, ChatMemoryBuffer] = {}
 
-        # Initialize directories and collections
+        # Initialize each bot
         for bot in self.bots.values():
-            self.initialize_bot_data(bot)
+            self.initialize_bot(bot)
 
-    def initialize_bot_data(self, bot: Bot):
-        """Initializes the data directory and chat memory for a given bot."""
+    def initialize_bot(self, bot: Bot) -> None:
+        """Initialize a bot's data directory, chat memory, and index."""
         os.makedirs(bot.data_dir, exist_ok=True)
         self.chat_memories[bot.id] = ChatMemoryBuffer.from_defaults(
             token_limit=2000)
+        self.indices[bot.id] = self.index_manager.build_or_update_index(bot)
 
 
 bot_config = BotConfig()
@@ -364,33 +443,20 @@ async def upload_file(bot_id: str, file: UploadFile = File(...)):
     with open(file_path, "wb") as f:
         f.write(await file.read())
 
-    # Rebuild the index with all documents in the bot-specific directory
+    # Rebuild the index
     try:
         print(
             f"Adding new file to the index for bot {bot_id}: {file.filename}")
-        documents = SimpleDirectoryReader(bot.data_dir).load_data()
-        collection = chroma_client.get_or_create_collection(
-            name=bot.collection_name,
-            metadata={"hnsw:space": "cosine"}
-        )
-        vector_store = ChromaVectorStore(chroma_collection=collection)
-        storage_context = StorageContext.from_defaults(
-            vector_store=vector_store)
-
-        # Rebuild the index with all documents
-        bot_config.indices[bot_id] = VectorStoreIndex.from_documents(
-            documents,
-            storage_context=storage_context,
-            show_progress=False
-        )
-
+        bot_config.indices[bot_id] = bot_config.index_manager.build_or_update_index(
+            bot)
+        if bot_config.indices[bot_id] is None:
+            raise HTTPException(
+                status_code=500, detail="Failed to build index")
         return {"status": "File uploaded and added to the index successfully"}
-
     except Exception as e:
         print(f"Error updating index for bot {bot_id}: {e}")
         raise HTTPException(
-            status_code=500, detail="Failed to update the index"
-        )
+            status_code=500, detail="Failed to update the index")
 
 
 @app.post("/chat/{bot_id}")
@@ -460,51 +526,14 @@ async def delete_document(bot_id: str, filename: str):
         raise HTTPException(status_code=404, detail="Bot not found")
 
     bot = bot_config.bots[bot_id]
-    file_path = os.path.join(bot.data_dir, filename)
 
-    try:
-        # Delete the file from the bot's data directory
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        else:
-            raise HTTPException(status_code=404, detail="File not found")
-
-        # Clear the existing collection to remove old vectors
-        try:
-            chroma_client.delete_collection(bot.collection_name)
-        except Exception as e:
-            print(
-                f"Warning: Could not delete collection for bot {bot_id}: {e}")
-
-        # Reset chat memory for this bot with a new instance
-        bot_config.chat_memories[bot_id] = ChatMemoryBuffer.from_defaults(
-            token_limit=2000)
-
-        # Rebuild the index after deletion if there are remaining files
-        if os.listdir(bot.data_dir):
-            documents = SimpleDirectoryReader(bot.data_dir).load_data()
-            # Create a new collection
-            collection = chroma_client.create_collection(
-                name=bot.collection_name,
-                metadata={"hnsw:space": "cosine"}
-            )
-            vector_store = ChromaVectorStore(chroma_collection=collection)
-            storage_context = StorageContext.from_defaults(
-                vector_store=vector_store
-            )
-            bot_config.indices[bot_id] = VectorStoreIndex.from_documents(
-                documents,
-                storage_context=storage_context,
-                show_progress=False
-            )
-        else:
-            # Clear the vector store if no documents remain
-            bot_config.indices[bot_id] = None
-
-        return {"status": f"Document '{filename}' deleted successfully"}
-
-    except Exception as e:
-        print(f"Error deleting document for bot {bot_id}: {e}")
+    success = await bot_config.index_manager.delete_document(bot, filename)
+    if not success:
         raise HTTPException(
-            status_code=500, detail="Failed to delete the document"
-        )
+            status_code=404, detail="File not found or error during deletion")
+
+    # Reset chat memory
+    bot_config.chat_memories[bot_id] = ChatMemoryBuffer.from_defaults(
+        token_limit=2000)
+
+    return {"status": f"Document '{filename}' deleted successfully"}
