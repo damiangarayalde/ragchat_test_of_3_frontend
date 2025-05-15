@@ -9,6 +9,11 @@ if "active_bot" not in st.session_state:
 if "bot_messages" not in st.session_state:
     st.session_state.bot_messages = {}
 
+# Initialize session state for file upload tracking
+if "uploaded_files" not in st.session_state:
+    # Track uploaded files for the current session
+    st.session_state.uploaded_files = set()
+
 # Function to fetch available bots
 
 
@@ -73,10 +78,9 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("Documentos")
 
-    # File uploader with key based on bot ID and a random component to force reset
-    upload_key = f"uploader_{selected_bot_id}"
+    # File uploader with a dynamic key to reset its state
+    upload_key = f"uploader_{selected_bot_id}_{len(st.session_state.uploaded_files)}"
 
-    # File uploader
     uploaded_file = st.file_uploader(
         "Subir documento",
         type=["pdf", "docx", "txt"],
@@ -84,7 +88,7 @@ with st.sidebar:
     )
 
     # File upload handling
-    if uploaded_file:
+    if uploaded_file and uploaded_file.name not in st.session_state.uploaded_files:
         try:
             with st.spinner("Procesando archivo..."):
                 files = {"file": (uploaded_file.name,
@@ -96,6 +100,9 @@ with st.sidebar:
                 if response.status_code == 200:
                     st.sidebar.success(
                         f"Documento '{uploaded_file.name}' subido correctamente")
+                    # Add the file to the session state to prevent re-upload
+                    st.session_state.uploaded_files.add(uploaded_file.name)
+                    # Trigger a rerun to refresh the document list
                     st.rerun()
                 else:
                     st.sidebar.error("Error al subir el archivo")
@@ -105,14 +112,15 @@ with st.sidebar:
     # Document list
     documents = fetch_documents(selected_bot_id)
     if documents:
+        st.write("Archivos indexados:")
         for doc in documents:
-            # Changed column ratio from [3, 1] to [2, 1] to give more space to the button
-            col1, col2 = st.columns([2, 1])
+            # Adjust column ratio for better layout
+            col1, col2 = st.columns([8, 1])
             col1.write(doc)
             if col2.button(
                 "Eliminar",
                 key=f"delete_{doc}_{selected_bot_id}",
-                use_container_width=True  # Make button use full column width
+                use_container_width=True
             ):
                 try:
                     response = requests.delete(
@@ -121,14 +129,17 @@ with st.sidebar:
                     if response.status_code == 200:
                         st.success(
                             f"Documento '{doc}' eliminado correctamente")
+                        # Remove the file from the session state
+                        st.session_state.uploaded_files.discard(doc)
                         st.rerun()
+                    else:
+                        st.error("Error al eliminar el documento")
                 except Exception as e:
                     st.error(f"Error al eliminar el documento: {e}")
     else:
         st.write("No hay documentos disponibles")
 
 # Chat interface
-
 
 # Replace all existing style sections with this single, consolidated one
 st.markdown("""
