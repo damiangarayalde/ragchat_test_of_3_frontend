@@ -76,15 +76,14 @@ with st.sidebar:
 
     # Document management section
     st.markdown("---")
-    st.subheader("Documentos")
 
     # Document list
+    st.subheader("Tu biblioteca:")
     documents = fetch_documents(selected_bot_id)
     if documents:
-        st.subheader("Archivos indexados:")
         for doc in documents:
             # Adjust column ratio for better layout
-            col1, col2 = st.columns([8, 1])
+            col1, col2 = st.columns([8, 3])
             col1.write(doc)
             if col2.button(
                 "Eliminar",
@@ -109,11 +108,9 @@ with st.sidebar:
         st.write("No hay documentos disponibles")
 
     # File uploader
-    st.markdown("---")
-    st.subheader("Subir documento")
     upload_key = f"uploader_{selected_bot_id}_{len(st.session_state.uploaded_files)}"
     uploaded_file = st.file_uploader(
-        "Subir documento",
+        "",  # "Subir documento",
         type=["pdf", "docx", "txt"],
         key=upload_key
     )
@@ -217,28 +214,16 @@ st.markdown("""
         margin: 0 !important;
     }
 
-    /* Delete button specific styling */
-    [data-testid="column"]:has(button:contains("Eliminar")) {
-        padding-left: 8px !important;  /* Add some spacing between filename and button */
-    }
     
     [data-testid="column"]:has(button:contains("Eliminar")) button {
         width: 100% !important;
-        min-width: 100px !important;  /* Ensure minimum width */
+        min-width: 100px !important;  
         white-space: nowrap !important;  /* Prevent text wrapping */
-        padding: 0 16px !important;  /* Add horizontal padding */
-        background-color: #128C7E !important;
+        padding: 0 46px !important;  /* Add horizontal padding */
+        background-color: #808080 !important;
     }
 
-    /* Update CSS for the "Eliminar" button */
-    [data-testid="column"]:has(button:contains("Eliminar")) button {
-        width: 120% !important;  /* Make the button wider */
-        background-color: #808080 !important;  /* Set grey color */
-        color: white !important;
-        border: none !important;
-        border-radius: 5px !important;
-        padding: 0 16px !important;  /* Add horizontal padding */
-    }
+    
 </style>
 """, unsafe_allow_html=True)
 
