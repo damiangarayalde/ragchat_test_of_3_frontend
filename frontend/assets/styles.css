@@ -1,3 +1,4 @@
+/* Chat container and messages */
 .chat-container {
     padding: 20px;
     max-width: 800px;
@@ -30,14 +31,20 @@
     text-align: right;
 }
 
-/* Input styling */
-
-/* 
-.stTextInput, .stButton {
+/* Form styling */
+[data-testid="stForm"] {
+    border: none !important;
+    padding: 0 !important;
     margin: 0 !important;
-} */
+    background: none !important;
+}
 
+/* Hide form hint */
+[data-testid="stForm"] > div:last-child small {
+    display: none !important;
+}
 
+/* Input styling */
 .stTextInput > div {
     border: none !important;
     padding: 0 !important;
@@ -47,16 +54,29 @@
 .stTextInput > div > div > input {
     background-color: #E9FFE5 !important;
     color: #333333 !important;
-    /* border: 1px solid #128C7E !important; */
     border: none !important;
     border-radius: 5px !important;
     height: 46px !important;
-    line-height: 46px !important;
     padding: 0 12px !important;
     margin: 0 !important;
     box-shadow: none !important;
+    display: flex !important;
+    align-items: center !important;
 }
 
+/* Prevent background color change in all states including autocomplete */
+.stTextInput > div > div > input:focus,
+.stTextInput > div > div > input:hover,
+.stTextInput > div > div > input:active,
+.stTextInput > div > div > input[disabled],
+.stTextInput > div > div > input:-webkit-autofill,
+.stTextInput > div > div > input:-webkit-autofill:hover,
+.stTextInput > div > div > input:-webkit-autofill:focus {
+    background-color: #E9FFE5 !important;
+    -webkit-box-shadow: 0 0 0 30px #E9FFE5 inset !important;
+    -webkit-text-fill-color: #333333 !important;
+    transition: background-color 5000s ease-in-out 0s !important;
+}
 
 /* Button styling */
 .stButton {
@@ -75,8 +95,6 @@
     box-shadow: none !important;
 }
 
-
-
 .stButton > button:hover {
     background-color: #0C6B5B !important;
 }
@@ -93,17 +111,6 @@
 /* Layout adjustments */
 [data-testid="column"] {
     padding: 0 !important;
-    display: flex !important;
-    align-items: center !important;
     margin: 0 !important;
     gap: 0.5rem !important;
-}
-
-
-/* Form styling #########*/
-[data-testid="stForm"] {
-    border: none !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    background: none !important;
 }
