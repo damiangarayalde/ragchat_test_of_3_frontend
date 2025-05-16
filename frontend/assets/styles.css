@@ -62,6 +62,9 @@
     box-shadow: none !important;
     display: flex !important;
     align-items: center !important;
+    font-family: "Source Sans Pro", sans-serif !important;  /* Match Streamlit's default font */
+    font-size: 1rem !important;  /* Match Streamlit's default placeholder size */
+    font-weight: 400 !important;  /* Match Streamlit's default font weight */
 }
 
 /* Prevent background color change in all states including autocomplete */
@@ -76,6 +79,9 @@
     -webkit-box-shadow: 0 0 0 30px #E9FFE5 inset !important;
     -webkit-text-fill-color: #333333 !important;
     transition: background-color 5000s ease-in-out 0s !important;
+    font-family: "Source Sans Pro", sans-serif !important;
+    font-size: 1rem !important;
+    font-weight: 400 !important;
 }
 
 /* Button styling */
