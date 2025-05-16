@@ -38,3 +38,18 @@ class APIClient:
         except Exception as e:
             st.error(f"Error sending message: {e}")
             return None
+
+    def upload_document(self, bot_id: str, file) -> dict:
+        """Upload a document for a specific bot."""
+        try:
+            files = {"file": file}
+            # Update URL to match backend route
+            response = requests.post(
+                f"{self.base_url}/documents/upload/{bot_id}",
+                files=files
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            st.error(f"Error uploading document: {e}")
+            return {}

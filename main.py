@@ -1,9 +1,9 @@
+
 import shutil
 from llama_index.core import Settings, VectorStoreIndex, SimpleDirectoryReader, StorageContext
 from llama_index.vector_stores.chroma import ChromaVectorStore
-from fastapi import Body, FastAPI, UploadFile, File, HTTPException
+from fastapi import Body, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
 import chromadb
 import os
 from dotenv import load_dotenv
@@ -13,6 +13,31 @@ from llama_index.core.memory import ChatMemoryBuffer
 from pydantic import BaseModel
 import logging
 from utils import ErrorHandler, FileManager, ConfigManager
+from backend.core.config import settings
+
+
+from fastapi import FastAPI
+# from backend.core.config import settings
+# from backend.routes import base, bots, chat, documents
+# from backend.services.bot_manager import BotManager
+from contextlib import asynccontextmanager
+
+# bot_manager = BotManager()
+
+
+# @asynccontextmanager
+# async def lifespan(app: FastAPI):
+#     yield
+
+# app = FastAPI(lifespan=lifespan)
+
+# # Include routers with proper prefixes
+# app.include_router(base.router)
+# app.include_router(bots.router, prefix="/bots")
+# # This includes /documents/upload/{bot_id}
+# app.include_router(documents.router, prefix="/documents")
+# app.include_router(chat.router, prefix="/chat")
+
 
 # Configure logging
 logging.basicConfig(
